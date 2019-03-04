@@ -1,4 +1,76 @@
-﻿function Get-FileFromUri {  
+﻿Function Test-Url {
+    [CmdletBinding()]
+ 
+    param (
+        [Parameter(Mandatory=$true)]
+        [String] $Url
+    )
+ 
+    Process {
+        if ([system.uri]::IsWellFormedUriString($Url,[System.UriKind]::Absolute)) {
+            $true
+        } else {
+            $false
+        }
+    }
+}
+
+
+function Test-Uri
+{
+    <#
+    .NOTES
+            Author: Will Steele
+            Last Modified Date: 07/27/2012     
+    .EXAMPLE
+            Test-Uri -Uri 'http://www.msn.com'
+            True     
+    .EXAMPLE
+            Test-Uri -Uri 'http:/\hax0r.com'
+            False
+      #>
+      param(
+            [ValidateNotNullOrEmpty()]
+            [String]
+            $Uri 
+      )
+     
+      if([System.Uri]::IsWellFormedUriString($Uri, [System.UriKind]::RelativeOrAbsolute))
+      {
+            [System.Uri]::TryCreate($Uri, [System.UriKind]::RelativeOrAbsolute, [ref] $uri)
+      }
+      else
+      {
+            $false
+      }
+}
+
+Function Get-DomainFromURL {
+    <#
+    .SYNOPSIS
+    Takes string URL and returns domain only
+    .DESCRIPTION
+    Takes string URL and returns domain only
+    .PARAMETER URL
+    URL to parse for domain
+    .NOTES
+    Author: Dane Kantner 9/16/2016
+
+    #>
+
+
+    [CmdletBinding()]
+        param(
+        [Alias("URI")][parameter(Mandatory=$True,ValueFromPipeline=$True)][string] $URL
+    )
+
+    try { $URL=([System.URI]$URL).host }
+    catch { write-error "Error parsing URL"}
+    return $URL.substring((($URL.substring(0,$URL.lastindexof("."))).lastindexof(".")+1),$URL.length-(($URL.substring(0,$URL.lastindexof("."))).lastindexof(".")+1))
+}
+
+
+function Get-FileFromUri {  
     param(  
         [parameter(Mandatory=$true, Position=0, ValueFromPipeline=$true, ValueFromPipelineByPropertyName=$true)]
         [string]

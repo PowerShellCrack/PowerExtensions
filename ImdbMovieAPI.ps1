@@ -286,7 +286,7 @@ function Resolve-ImdbId {
 }
 
 
-function Get-ImdbTitle {
+function Get-ImdbTitle2 {
 <#
     .Synopsis
         Retrieves IMDb (Internet Movie Database) information using the OMDb (Open Movie Database) API by Brian Fritz.
@@ -398,117 +398,162 @@ function Get-ImdbTitle {
     }
 }
 
-function Get-TmdbTitle {
-    <#
-        .Synopsis
-            Retrieves IMDb (Internet Movie Database) information using the OMDb (Open Movie Database) API by Brian Fritz.
-            Changes to the OMDb API may break the functionality of this command.
-    
-        .Parameter Title
-            If no wildcards are present, the first matching title is returned.
-            If wildcards are present, the first 10 matching titles are returned.
-    
-        .Parameter Year
-            The year of the title to retrieve (optional).
-    
-        .Parameter Id
-            An integer, string of numbers, or an object with the property "imdbID" that represents the IMDb ID of the title to retrieve.
-            No characters are interpreted as wildcards.
-    
-        .NOTES
-            Author: Benjamin Lemmond
-            Email : benlemmond@codeglue.org
-    
-        .EXAMPLE
-            Get-ImdbTitle 'True Grit'
-    
-            This example returns a PSCustomObject respresenting the 2010 movie "True Grit".
-    
-        .EXAMPLE
-            Get-ImdbTitle 'True Grit' 1969
-    
-            This example returns a PSCustomObject respresenting the 1969 movie "True Grit".
-    
-        .EXAMPLE
-            'True Grit' | Get-ImdbTitle -Year 1969
-    
-            Similar to the previous example except the title is piped.
-    
-        .EXAMPLE
-            65126 | imdb
-    
-            This example also returns a PSCustomObject respresenting the 1969 movie "True Grit".
-    #>
-    
-        [CmdletBinding(DefaultParameterSetName='Title')]
-        param (
-            [Parameter(ParameterSetName='Title', Mandatory=$true, Position=0, ValueFromPipeline=$true, ValueFromPipelineByPropertyName=$true)]
-            [string[]]
-            $Title,
-    
-            [Parameter(Position=1, ValueFromPipelineByPropertyName=$true)]
-            [int]
-            $Year,
-    
-            [Parameter(ParameterSetName='Id', Mandatory=$true, Position=0, ValueFromPipeline=$true, ValueFromPipelineByPropertyName=$true)]
-            [object[]]
-            $Id,
-    
-            [Parameter(Mandatory=$true, Position=2)]
-            [string]
-            $Api
-        )
-    
-        process {
-            try {
-                if ($PSBoundParameters.ContainsKey('Id')) {
-                    $queryStrings = $Id | Resolve-ImdbId | foreach { "i=$_" }
+function Get-ImdbTitle {
+<#
+    .Synopsis
+        Retrieves IMDb (Internet Movie Database) information using the OMDb (Open Movie Database) API by Brian Fritz.
+        Changes to the OMDb API may break the functionality of this command.
+
+    .Parameter Title
+        If no wildcards are present, the first matching title is returned.
+        If wildcards are present, the first 10 matching titles are returned.
+
+    .Parameter Year
+        The year of the title to retrieve (optional).
+
+    .Parameter Id
+        An integer, string of numbers, or an object with the property "imdbID" that represents the IMDb ID of the title to retrieve.
+        No characters are interpreted as wildcards.
+
+    .NOTES
+        Author: Benjamin Lemmond
+        Email : benlemmond@codeglue.org
+
+    .EXAMPLE
+        Get-ImdbTitle 'True Grit'
+
+        This example returns a PSCustomObject respresenting the 2010 movie "True Grit".
+
+    .EXAMPLE
+        Get-ImdbTitle 'True Grit' 1969
+
+        This example returns a PSCustomObject respresenting the 1969 movie "True Grit".
+
+    .EXAMPLE
+        'True Grit' | Get-ImdbTitle -Year 1969
+
+        Similar to the previous example except the title is piped.
+
+    .EXAMPLE
+        65126 | imdb
+
+        This example also returns a PSCustomObject respresenting the 1969 movie "True Grit".
+#>
+
+    [CmdletBinding(DefaultParameterSetName='Title')]
+    param (
+        [Parameter(ParameterSetName='Title', Mandatory=$true, Position=0, ValueFromPipeline=$true, ValueFromPipelineByPropertyName=$true)]
+        [string[]]
+        $Title,
+
+        [Parameter(Position=1, ValueFromPipelineByPropertyName=$true)]
+        [int]
+        $Year,
+
+        [Parameter(ParameterSetName='Id', Mandatory=$true, Position=0, ValueFromPipeline=$true, ValueFromPipelineByPropertyName=$true)]
+        [object[]]
+        $Id,
+
+        [Parameter(Mandatory=$true, Position=2)]
+        [string]
+        $Api
+    )
+
+    process {
+        try {
+            if ($PSBoundParameters.ContainsKey('Id')) {
+                $queryStrings = $Id | Resolve-ImdbId | foreach { "i=$_" }
+            }
+            else {
+                $yearParam = ''
+
+                if ($Year) {
+                    $yearParam = "&y=$Year"
                 }
-                else {
-                    $yearParam = ''
-    
-                    if ($Year) {
-                        $yearParam = "&y=$Year"
+
+                $queryStrings = $Title | foreach {
+                    $key = 't'
+                    if ([System.Management.Automation.WildcardPattern]::ContainsWildcardCharacters($Title)) {
+                        $key = 's'
                     }
-    
-                    $queryStrings = $Title | foreach {
-                        $key = 't'
-                        if ([System.Management.Automation.WildcardPattern]::ContainsWildcardCharacters($Title)) {
-                            $key = 's'
-                        }
-                        "$key=$_$yearParam"
-                    }
-                }
-    
-                $uriRoot ="https://api.themoviedb.org/3/movie/550?api_key=$Api&"
-                
-                $webClient = New-Object System.Net.WebClient
-    
-                $queryStrings | foreach {
-                    try {
-                        Write-Verbose $uriRoot$_
-                        $result = $webClient.DownloadString("$uriRoot$_") | ConvertFrom-Json
-    
-                        if ($result.psobject.Properties['Error']) {
-                            throw [System.Management.Automation.ItemNotFoundException]$result.Error
-                        }
-    
-                        if (-not $result.psobject.Properties['Search']) {
-                            return $result
-                        }
-    
-                        $result.Search | Resolve-ImdbId | foreach { $webClient.DownloadString("${uriRoot}i=$_") } | ConvertFrom-Json
-                    }
-                    catch {
-                        Write-Error -ErrorRecord $_
-                    }
+                    "$key=$_$yearParam"
                 }
             }
-            catch {
-                Write-Error -ErrorRecord $_
+
+            $uriRoot ="http://www.omdbapi.com/?apikey=$Api&"
+            
+            $webClient = New-Object System.Net.WebClient
+
+            $entrys = @()
+
+            $queryStrings | foreach {
+                try {
+                    Write-Verbose $uriRoot$_
+                    $result = $webClient.DownloadString("$uriRoot$_") | ConvertFrom-Json
+
+                    if ($result.psobject.Properties['Error']) {
+                        throw [System.Management.Automation.ItemNotFoundException]$result.Error
+                    }
+
+                    if (-not $result.psobject.Properties['Search']) {
+                        $entrys += $result
+                    }
+                }
+                catch {
+                    Write-Error -ErrorRecord $_
+                }
             }
         }
+        catch {
+            Write-Error -ErrorRecord $_
+        }
     }
+
+    End {
+     
+     If($entrys){
+            #Write-Verbose "Results returned: $($entrys.count)"
+            
+            $returnObjects = @()
+            Foreach($entry in $entrys) {
+                #Write-Verbose "Found: $($entry.title)"
+
+                $returnObject = New-Object System.Object
+                $returnObject | Add-Member -Type NoteProperty -Name Title -Value $entry.title
+                $returnObject | Add-Member -Type NoteProperty -Name Year -Value $entry.year
+                $returnObject | Add-Member -Type NoteProperty -Name Rated -Value $entry.Rated
+                $returnObject | Add-Member -Type NoteProperty -Name Released -Value $entry.Released
+                $returnObject | Add-Member -Type NoteProperty -Name Runtime -Value $entry.Runtime
+                $returnObject | Add-Member -Type NoteProperty -Name Genre -Value $entry.Genre
+                $returnObject | Add-Member -Type NoteProperty -Name Director -Value $entry.Director
+                $returnObject | Add-Member -Type NoteProperty -Name Writer  -Value $entry.Writer
+                $returnObject | Add-Member -Type NoteProperty -Name Actors -Value $entry.Actors
+                $returnObject | Add-Member -Type NoteProperty -Name Plot -Value $entry.Plot
+                $returnObject | Add-Member -Type NoteProperty -Name Language -Value $entry.Language
+                $returnObject | Add-Member -Type NoteProperty -Name Country -Value $entry.Country 
+                $returnObject | Add-Member -Type NoteProperty -Name Awards -Value $entry.Awards
+                $returnObject | Add-Member -Type NoteProperty -Name Poster  -Value $entry.Poster
+                $returnObject | Add-Member -Type NoteProperty -Name Ratings  -Value $entry.Ratings
+                $returnObject | Add-Member -Type NoteProperty -Name Metascore -Value $entry.Metascore
+                $returnObject | Add-Member -Type NoteProperty -Name imdbRating -Value $entry.imdbRating 
+                $returnObject | Add-Member -Type NoteProperty -Name imdbVotes  -Value $entry.imdbVotes
+                $returnObject | Add-Member -Type NoteProperty -Name imdbID  -Value $entry.imdbID
+                $returnObject | Add-Member -Type NoteProperty -Name Type  -Value $entry.Type
+                $returnObject | Add-Member -Type NoteProperty -Name DVD  -Value $entry.DVD
+                $returnObject | Add-Member -Type NoteProperty -Name BoxOffice  -Value $entry.BoxOffice
+                $returnObject | Add-Member -Type NoteProperty -Name Production -Value $entry.Production
+                $returnObject | Add-Member -Type NoteProperty -Name Website  -Value $entry.Website
+                $returnObjects += $returnObject
+            }
+            
+
+            return $returnObjects
+
+            $returnObjects.Search | Resolve-ImdbId | foreach { $webClient.DownloadString("${uriRoot}i=$_") } | ConvertFrom-Json
+        }
+    }
+}
+
     
 function Open-ImdbTitle {
 <#
@@ -692,16 +737,23 @@ function Get-ImdbMovie
             }
         }
         Write-Verbose "Movie link found."
- 
+        
+        Write-Verbose "Fetching movie id."
+        $ttid_regex = "tt\d+"
+        $titlelink[0] -match $ttid_regex | Out-Null
+        $imdb_id = $matches[0]
+
         $movieURL = "http://www.imdb.com$($titlelink[0])"
         Write-Verbose "Fetching movie page."
         $moviehtml = Invoke-WebRequest $movieURL -Headers @{"Accept-Language"="en-US,en;"}
         Write-Verbose "Movie page fetched."
- 
+
         $movie = New-Object -TypeName psobject
- 
+        
+        $title = ($moviehtml.AllElements | where data-title | select -First 1)."data-title".Trim()
+
         Write-Verbose "Parcing for title."
-        Add-Member -InputObject $movie -MemberType 'NoteProperty' -Name "Title" -Value ($moviehtml.AllElements | where itemprop -eq 'name' | select -First 1).innerText.Trim() -Force
+        Add-Member -InputObject $movie -MemberType 'NoteProperty' -Name "Title" -Value $title -Force
         
         Write-Verbose "Parcing for plot."
         Add-Member -InputObject $movie -MemberType 'NoteProperty' -Name "Plot" -Value ($moviehtml.AllElements | where class -eq 'summary_text' | select -First 1).innerText.Trim() -Force
@@ -771,7 +823,10 @@ function Get-ImdbMovie
 
         Write-Verbose "Adding the link."
         Add-Member -InputObject $movie -MemberType 'NoteProperty' -Name "Link" -Value $movieURL -Force
- 
+        
+        Write-Verbose "Adding Imdb ID."
+        Add-Member -InputObject $movie -MemberType 'NoteProperty' -Name "ImdbID" -Value $imdb_id -Force
+
         Write-Verbose "Returning object."
         return $movie
     }

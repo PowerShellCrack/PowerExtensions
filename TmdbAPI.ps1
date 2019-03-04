@@ -71,7 +71,10 @@ Function Find-TMDBItem{
         $ApiKey,
 
         [Parameter(Mandatory=$false, Position=7)]
-        [switch]$SelectFirst
+        [switch]$SelectFirst,
+
+        [Parameter(Mandatory=$false, Position=8)]
+        [switch]$LikeSearch
 
     )
     Begin
@@ -192,7 +195,7 @@ Function Find-TMDBItem{
             Where-Object {$_.MemberType -like "NoteProperty"} |
             Select-Object -ExpandProperty Name
             ForEach($property in $Properties){
-                $JsonObjQueryy = $JsonObjQuery + "&" + $property + "=" + $jsonObj.$($property)
+                $JsonObjQuery = $JsonObjQuery + "&" + $property + "=" + $jsonObj.$($property)
             }
             # Remove leadinng & , add in actual function instead
             $JsonObjQuery = $JsonObjQuery.TrimStart("&") 
@@ -291,7 +294,8 @@ Function Find-TMDBItem{
             If($SelectFirst){
                 $firstobject = $returnObjects | Select -First 1
                 return $firstobject
-            }Else{
+            }
+            Else{
                 return $returnObjects
             }
             #return $results

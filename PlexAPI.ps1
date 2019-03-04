@@ -102,12 +102,12 @@
                                             'X-Plex-Device'=$env:COMPUTERNAME
                                             'X-Plex-Version'=$Global:PlexScriptVersion.ToString();
                                             'X-Plex-Username'=$GetCreds.GetNetworkCredential().UserName;
-                                        }
+                                        } -UseBasicParsing
         }
-        catch
-        {
+        Catch [System.Net.WebException] { 
             $ErrorMessage = $_.Exception.Message
             Write-Host ("Failed to authenticated to [{0}] using [{1}]. Error message [{2}]" -f $PlexUrl,$GetCreds.GetNetworkCredential().UserName,$ErrorMessage) -ForegroundColor Red
+            $_.Exception.Response 
             break;
         }
     }
@@ -116,11 +116,12 @@
     }
 }
 
+
 Function Get-PlexVideo {
     [CmdletBinding(DefaultParameterSetName="VideoMeta")]
     Param(
     [Parameter(Mandatory=$True,Position=1)]
-        [string]$PlexServer,
+        [string]$URI,
 
     [Parameter(Mandatory=$False)]
     [ValidateSet('Watched','Unwatched','All')]
@@ -142,118 +143,122 @@ Function Get-PlexVideo {
     [Parameter(Mandatory=$False, ParameterSetName="TVMeta")]
     [int]$EpisodeNumber
     )
-
-    If($PlexServer) #User specified their Plex Server
-        {
-        $SearchResult = @()
-    
-    
-        Switch ($ViewedStatus.ToLower())
+    Begin{
+        $UseURL = Validate-PlexURI $URI
+    }
+    Process{
+        If($UseURL) #User specified their Plex Server
             {
-                'all' {$moviesearchtrail = '/search?type=1&sort=titleSort:asc' ; $episodesearchtrail = '/all?type=4&sort=index:asc'}
-                'watched' {$moviesearchtrail = '/search?type=1unwatched=0&sort=titleSort:asc' ; $episodesearchtrail = '/all?type=4&unwatched=0&sort=index:asc'}
-                'unwatched' {$moviesearchtrail = '/all?type=1&unwatched=1&sort=titleSort:asc' ; $episodesearchtrail = '/all?type=4&unwatched=1&sort=index:asc'}
-            }
+            $SearchResult = @()
+    
+    
+            Switch ($ViewedStatus.ToLower())
+                {
+                    'all' {$moviesearchtrail = '/search?type=1&sort=titleSort:asc' ; $episodesearchtrail = '/all?type=4&sort=index:asc'}
+                    'watched' {$moviesearchtrail = '/search?type=1unwatched=0&sort=titleSort:asc' ; $episodesearchtrail = '/all?type=4&unwatched=0&sort=index:asc'}
+                    'unwatched' {$moviesearchtrail = '/all?type=1&unwatched=1&sort=titleSort:asc' ; $episodesearchtrail = '/all?type=4&unwatched=1&sort=index:asc'}
+                }
 
 
-        If ($EpisodeNumber) {$episodesearchtrail =$episodesearchtrail + "&index=" + $EpisodeNumber}
+            If ($EpisodeNumber) {$episodesearchtrail =$episodesearchtrail + "&index=" + $EpisodeNumber}
 
 
-        If ($VideoName -and (!$EpisodeNumber -or !$SeriesNumber -or !$ShowName)) #Video Name specified as a parameter, no TVMeta parameters defined
-            {$moviesearchtrail = $moviesearchtrail + "&title=" + ($VideoName -replace " ","%20"); $episodesearchtrail = $episodesearchtrail + "&title=" + ($VideoName -replace " ","%20")}
+            If ($VideoName -and (!$EpisodeNumber -or !$SeriesNumber -or !$ShowName)) #Video Name specified as a parameter, no TVMeta parameters defined
+                {$moviesearchtrail = $moviesearchtrail + "&title=" + ($VideoName -replace " ","%20"); $episodesearchtrail = $episodesearchtrail + "&title=" + ($VideoName -replace " ","%20")}
 
 
-            $SectionsBaseURL = "http://" + $PlexServer + ":32400/library/sections"
-            $Sections = New-Object System.Xml.XmlDocument
-            $Sections.Load($SectionsBaseURL)
-            $SectionsDirectories = $Sections.MediaContainer.Directory
+                $SectionsBaseURL = $UseURL + "/library/sections"
+                $Sections = New-Object System.Xml.XmlDocument
+                $Sections.Load($SectionsBaseURL)
+                $SectionsDirectories = $Sections.MediaContainer.Directory
         
 
-            If (!$VideoType)
-                {#No VideoType or VideoName specified - Global Search
+                If (!$VideoType)
+                    {#No VideoType or VideoName specified - Global Search
               
               
 
-                  ForEach ($Directory in $SectionsDirectories) #Each directory in section listing...
-                    {
-                    If ($Directory.Type -eq 'movie') #... where it's a movie
+                      ForEach ($Directory in $SectionsDirectories) #Each directory in section listing...
                         {
-                        $ChosenLibraryURL = $SectionsBaseURL+ "/" + $Directory.key + $moviesearchtrail #List 'movies' against the section
-                        $ChosenLibrary = New-Object System.Xml.XmlDocument
-                        $ChosenLibrary.Load($ChosenLibraryURL)
-                        ForEach ($Video in ($ChosenLibrary.MediaContainer.Video)) {$SearchResult += $Video}
-                        }#Close section type -eq Movie check if block
+                        If ($Directory.Type -eq 'movie') #... where it's a movie
+                            {
+                            $ChosenLibraryURL = $SectionsBaseURL+ "/" + $Directory.key + $moviesearchtrail #List 'movies' against the section
+                            $ChosenLibrary = New-Object System.Xml.XmlDocument
+                            $ChosenLibrary.Load($ChosenLibraryURL)
+                            ForEach ($Video in ($ChosenLibrary.MediaContainer.Video)) {$SearchResult += $Video}
+                            }#Close section type -eq Movie check if block
 
-                    ElseIf ($Directory.Type -eq 'show') #... where it's a show
-                        {
-                        $ChosenLibraryURL = $SectionsBaseURL+ "/" + $Directory.key + $episodesearchtrail #Perform an 'show' search against the section
-                        $ChosenLibrary = New-Object System.Xml.XmlDocument
-                        $ChosenLibrary.Load($ChosenLibraryURL)
-                        ForEach ($Video in ($ChosenLibrary.MediaContainer.Video)) {$SearchResult += $Video}
-                        } #Close section type -eq show check if block
-                    } #Close directory in section loop
+                        ElseIf ($Directory.Type -eq 'show') #... where it's a show
+                            {
+                            $ChosenLibraryURL = $SectionsBaseURL+ "/" + $Directory.key + $episodesearchtrail #Perform an 'show' search against the section
+                            $ChosenLibrary = New-Object System.Xml.XmlDocument
+                            $ChosenLibrary.Load($ChosenLibraryURL)
+                            ForEach ($Video in ($ChosenLibrary.MediaContainer.Video)) {$SearchResult += $Video}
+                            } #Close section type -eq show check if block
+                        } #Close directory in section loop
 
         
 
 
             
-                }#Close ElseIf No VideoType or VideoName specified 
+                    }#Close ElseIf No VideoType or VideoName specified 
 
-            Else #VideoType initialised
-                    {
-            
-
-                    If ($VideoType.ToLower() -eq "movies") #No VideoName, VideoType -eq movie
-                         {
-                         ForEach ($Directory in $SectionsDirectories) #Each directory in section listing...
-                            {
-                            If ($Directory.Type -eq 'movie') #... where it's a movie
-                                {
-                                $ChosenLibraryURL = $SectionsBaseURL+ "/" + $Directory.key + $moviesearchtrail #List 'movies' against the section
-                                $ChosenLibrary = New-Object System.Xml.XmlDocument
-                                $ChosenLibrary.Load($ChosenLibraryURL)
-                                ForEach ($Video in ($ChosenLibrary.MediaContainer.Video)) {$SearchResult += $Video}
-                                }#Close section type -eq Movie check if block
-                            } #Close directory in section loop
-            
-                        }# Close No VideoName, VideoType -eq Movie ElseIf block
-        
-                     ElseIf ($VideoType.ToLower() -eq "tv") #No VideoName, VideoType -eq tv
+                Else #VideoType initialised
                         {
-                        ForEach ($Directory in $SectionsDirectories) #Each directory in section listing...
-                            {
-                            If ($Directory.Type -eq 'show') #... where it's a show
+            
+
+                        If ($VideoType.ToLower() -eq "movies") #No VideoName, VideoType -eq movie
+                             {
+                             ForEach ($Directory in $SectionsDirectories) #Each directory in section listing...
                                 {
-                                $ChosenLibraryURL = $SectionsBaseURL+ "/" + $Directory.key + $episodesearchtrail #Perform an 'show' search against the section
-                                $ChosenLibrary = New-Object System.Xml.XmlDocument
-                                $ChosenLibrary.Load($ChosenLibraryURL)
-                                ForEach ($Video in ($ChosenLibrary.MediaContainer.Video)) {$SearchResult += $Video}
-                                } #Close section type -eq show check if block
-                            } #Close directory in section loop
+                                If ($Directory.Type -eq 'movie') #... where it's a movie
+                                    {
+                                    $ChosenLibraryURL = $SectionsBaseURL+ "/" + $Directory.key + $moviesearchtrail #List 'movies' against the section
+                                    $ChosenLibrary = New-Object System.Xml.XmlDocument
+                                    $ChosenLibrary.Load($ChosenLibraryURL)
+                                    ForEach ($Video in ($ChosenLibrary.MediaContainer.Video)) {$SearchResult += $Video}
+                                    }#Close section type -eq Movie check if block
+                                } #Close directory in section loop
+            
+                            }# Close No VideoName, VideoType -eq Movie ElseIf block
+        
+                         ElseIf ($VideoType.ToLower() -eq "tv") #No VideoName, VideoType -eq tv
+                            {
+                            ForEach ($Directory in $SectionsDirectories) #Each directory in section listing...
+                                {
+                                If ($Directory.Type -eq 'show') #... where it's a show
+                                    {
+                                    $ChosenLibraryURL = $SectionsBaseURL+ "/" + $Directory.key + $episodesearchtrail #Perform an 'show' search against the section
+                                    $ChosenLibrary = New-Object System.Xml.XmlDocument
+                                    $ChosenLibrary.Load($ChosenLibraryURL)
+                                    ForEach ($Video in ($ChosenLibrary.MediaContainer.Video)) {$SearchResult += $Video}
+                                    } #Close section type -eq show check if block
+                                } #Close directory in section loop
            
-                        } # Close No VideoName, VideoType -eq TV If block
+                            } # Close No VideoName, VideoType -eq TV If block
 
 
-                    }#Close loop where VideoType initialised
+                        }#Close loop where VideoType initialised
 
 
         
-        If ($SeriesNumber) {$SearchResult = $SearchResult | Where {$_.parentIndex -eq $SeriesNumber}}
-        If ($VideoName -and ($EpisodeNumber -or $SeriesNumber -or $ShowName)){$SearchResult = $SearchResult | Where {$_.title -match $VideoName} }
-        If ($ShowName) {$SearchResult = $SearchResult | Where {($_.grandparentTitle -match $ShowName) -and ($_.Type -eq 'episode')}}
+            If ($SeriesNumber) {$SearchResult = $SearchResult | Where {$_.parentIndex -eq $SeriesNumber}}
+            If ($VideoName -and ($EpisodeNumber -or $SeriesNumber -or $ShowName)){$SearchResult = $SearchResult | Where {$_.title -match $VideoName} }
+            If ($ShowName) {$SearchResult = $SearchResult | Where {($_.grandparentTitle -match $ShowName) -and ($_.Type -eq 'episode')}}
    
 
-        Return $SearchResult
-        }
+            Return $SearchResult
+            }
 
-    Else {Write-Error -Message "No Plex Server specified"} #User did not specify their Plex Server
+        Else {Write-Error -Message "No Plex Server specified"} #User did not specify their Plex Server
+    }
 }
 
 
 Function Get-PlexShow{
     Param(
     [Parameter(Mandatory=$True,Position=1)]
-    [string]$PlexServer,
+    [system.uri]$URI,
 
     [Parameter(Mandatory=$False)]
     [string]$ShowName,
@@ -263,46 +268,51 @@ Function Get-PlexShow{
     [string]$ViewedStatus = 'All'
     )
 
-    If($PlexServer) #User specified their Plex Server
-        {
-        $SearchResult = @()
+    Begin{
+        $UseURL = Validate-PlexURI $URI
+    }
+    Process{
+        If($UseURL) #User specified their Plex Server
+            {
+            $SearchResult = @()
     
 
-        Switch ($ViewedStatus.ToLower())
-            {
-                'all' {$showsearchtrail = '/all?type=2&sort=titleSort:asc'}
-                'watched' {$showsearchtrail = '/all?type=2&sort=titleSort:asc'}
-                'part-watched' {$showsearchtrail = '/all?type=2&sort=titleSort:asc'}
-                'unwatched' {$showsearchtrail = '/all?type=2&unwatchedLeaves=1&sort=titleSort:asc'}
-            }
+            Switch ($ViewedStatus.ToLower())
+                {
+                    'all' {$showsearchtrail = '/all?type=2&sort=titleSort:asc'}
+                    'watched' {$showsearchtrail = '/all?type=2&sort=titleSort:asc'}
+                    'part-watched' {$showsearchtrail = '/all?type=2&sort=titleSort:asc'}
+                    'unwatched' {$showsearchtrail = '/all?type=2&unwatchedLeaves=1&sort=titleSort:asc'}
+                }
 
-    If ($ShowName) {$showsearchtrail = $showsearchtrail + "&title=" + ($ShowName -replace " ","%20")}
+        If ($ShowName) {$showsearchtrail = $showsearchtrail + "&title=" + ($ShowName -replace " ","%20")}
 
-            $SectionsBaseURL = "http://" + $PlexServer + ":32400/library/sections"
-            $Sections = New-Object System.Xml.XmlDocument
-            $Sections.Load($SectionsBaseURL)
-            $SectionsDirectories = $Sections.MediaContainer.Directory
+                $SectionsBaseURL = $UseURL + "/library/sections"
+                $Sections = New-Object System.Xml.XmlDocument
+                $Sections.Load($SectionsBaseURL)
+                $SectionsDirectories = $Sections.MediaContainer.Directory
 
-                    ForEach ($Directory in $SectionsDirectories) #Each directory in section listing...
-                        {
-
-
-                        If ($Directory.Type -eq 'show') #... where it's of type show
+                        ForEach ($Directory in $SectionsDirectories) #Each directory in section listing...
                             {
-                            $ChosenLibraryURL = $SectionsBaseURL+ "/" + $Directory.key + $showsearchtrail #Perform an 'show' search against the section
-                            $ChosenLibrary = New-Object System.Xml.XmlDocument
-                            $ChosenLibrary.Load($ChosenLibraryURL)
-                            ForEach ($Show in ($ChosenLibrary.MediaContainer.Directory)) {$SearchResult += $Show}
-                            } #Close section type -eq show check if block
-                        } #Close directory in section loop
+
+
+                            If ($Directory.Type -eq 'show') #... where it's of type show
+                                {
+                                $ChosenLibraryURL = $SectionsBaseURL+ "/" + $Directory.key + $showsearchtrail #Perform an 'show' search against the section
+                                $ChosenLibrary = New-Object System.Xml.XmlDocument
+                                $ChosenLibrary.Load($ChosenLibraryURL)
+                                ForEach ($Show in ($ChosenLibrary.MediaContainer.Directory)) {$SearchResult += $Show}
+                                } #Close section type -eq show check if block
+                            } #Close directory in section loop
             
 
-    If ($ViewedStatus.ToLower() -eq 'part-watched'){$SearchResult = $SearchResult | Where {($_.viewedLeafCount -ne 0) -and ($_.leafCount -ne $_.viewedLeafCount)} }     
-    ElseIf ($ViewedStatus.ToLower() -eq 'watched'){$SearchResult = $SearchResult | Where {$_.leafCount -eq $_.viewedLeafCount} }            
-    Return $SearchResult
-    }
+        If ($ViewedStatus.ToLower() -eq 'part-watched'){$SearchResult = $SearchResult | Where {($_.viewedLeafCount -ne 0) -and ($_.leafCount -ne $_.viewedLeafCount)} }     
+        ElseIf ($ViewedStatus.ToLower() -eq 'watched'){$SearchResult = $SearchResult | Where {$_.leafCount -eq $_.viewedLeafCount} }            
+        Return $SearchResult
+        }
 
-    Else {Write-Error -Message "No Plex Server specified"} #User did not specify their Plex Server
+        Else {Write-Error -Message "No Plex Server specified or invalid URI"} #User did not specify their Plex Server
+    }
 }
 
 
@@ -310,7 +320,7 @@ Function Get-PlexShow{
 Function Set-PlexViewedStatus{
     Param(
     [Parameter(Mandatory=$True,Position=1)]
-    [string]$PlexServer,
+    [string]$URI,
 
     [Parameter(Mandatory=$True,ValueFromPipeline=$true,Position=0)]
     [PSobject[]]$Key,
@@ -321,25 +331,26 @@ Function Set-PlexViewedStatus{
     )
 
     BEGIN {
-    If ($ViewedStatus.ToLower() -eq "watched") {$ScrobbleAction = "scrobble"}
-    Else {$ScrobbleAction = "unscrobble"}
+        $UseURL = Validate-PlexURI $URI
+        If ($ViewedStatus.ToLower() -eq "watched") {$ScrobbleAction = "scrobble"}
+        Else {$ScrobbleAction = "unscrobble"}
+
     }
-
     PROCESS {
-    ForEach ($ObjectKey in $Key)
-    {
-    If ($ObjectKey.GetType().Name -eq 'XmlElement') 
+        ForEach ($ObjectKey in $Key)
         {
-        If ($ObjectKey.ratingKey){$ResolvedObjectKey = $ObjectKey.ratingKey}
-        }
+        If ($ObjectKey.GetType().Name -eq 'XmlElement') 
+            {
+            If ($ObjectKey.ratingKey){$ResolvedObjectKey = $ObjectKey.ratingKey}
+            }
 
-    ElseIf ($ObjectKey.GetType().Name -eq 'String')
-        {
-        $ResolvedObjectKey = $ObjectKey
-        }
+        ElseIf ($ObjectKey.GetType().Name -eq 'String')
+            {
+            $ResolvedObjectKey = $ObjectKey
+            }
 
-    $ScrobbleURL = "http://"+ $PlexServer + ":32400/:/" + $ScrobbleAction + "?key=" + $ResolvedObjectKey + "&identifier=com.plexapp.plugins.library"
-    $InvokeScrobbleAction = Invoke-WebRequest($ScrobbleURL)
+        $ScrobbleURL = $UseURL +"/" + $ScrobbleAction + "?key=" + $ResolvedObjectKey + "&identifier=com.plexapp.plugins.library"
+        $InvokeScrobbleAction = Invoke-WebRequest $ScrobbleURL -UseBasicParsing
     }
 
 
@@ -424,7 +435,7 @@ Function Get-PlexRecentlyAddedMovies {
     $imgPlex = "http://i.imgur.com/RyX9y3A.jpg"
     #endregion
 
-    $response = Invoke-WebRequest "$url`:$port/library/recentlyAdded/?X-Plex-Token=$Token" -Headers @{"accept"="application/json"}
+    $response = Invoke-WebRequest "$url`:$port/library/recentlyAdded/?X-Plex-Token=$Token" -Headers @{"accept"="application/json"} -UseBasicParsing
     $jsonlibrary = ConvertFrom-JSON $response.Content
 
     # Grab those libraries!
@@ -453,18 +464,18 @@ Function Get-PlexRecentlyAddedMovies {
 
                 # Retrieve movie info from the Open Movie Database
                 $omdbURL = "omdbapi.com/?t=$($movie.title)&y=$($movie.year)&r=JSON"
-                $omdbResponse = ConvertFrom-JSON (Invoke-WebRequest $omdbURL).content
+                $omdbResponse = ConvertFrom-JSON (Invoke-WebRequest $omdbURL -UseBasicParsing).content
 
                 # If there was no result, try searching for the previous year (OMDB/The Movie Database quirkiness)
                 if ($omdbResponse.Response -eq "False") {
                     $omdbURL = "omdbapi.com/?t=$($movie.title)&y=$($($movie.year)-1)&r=JSON"
-                    $omdbResponse = ConvertFrom-JSON (Invoke-WebRequest $omdbURL).content
+                    $omdbResponse = ConvertFrom-JSON (Invoke-WebRequest $omdbURL -UseBasicParsing).content
                 }
 
                 # If there was STILL no result, try searching for the *next* year
                 if ($omdbResponse.Response -eq "False") {
                     $omdbURL = "omdbapi.com/?t=$($movie.title)&y=$($($movie.year)+1)&r=JSON"
-                    $omdbResponse = ConvertFrom-JSON (Invoke-WebRequest $omdbURL).content
+                    $omdbResponse = ConvertFrom-JSON (Invoke-WebRequest $omdbURL -UseBasicParsing).content
                 }
 
                 if ($omdbResponse.Response -eq "True") {
@@ -512,7 +523,7 @@ Function Get-PlexRecentlyAddedMovies {
 
                  # Retrieve show info from the Open Movie Database
                  $omdbURL = "omdbapi.com/?t=$($show.name)&r=JSON"
-                 $omdbResponse = ConvertFrom-JSON (Invoke-WebRequest $omdbURL).content
+                 $omdbResponse = ConvertFrom-JSON (Invoke-WebRequest $omdbURL -UseBasicParsing).content
 
                  # Build the HTML
                  if ($omdbResponse.Response -eq "True") {
@@ -573,7 +584,7 @@ Function Get-PlexRecentlyAddedMovies {
     }
 
     if (-not $OmitVersionNumber) {
-        $body += "<br><br><br><br><p align = right><font size = 1 color = Gray>Plex Version: $((Invoke-RestMethod "$url`:$port/?X-Plex-Token=$Token" -Headers @{"accept"="application/json"}).mediaContainer.version)</p></font>"
+        $body += "<br><br><br><br><p align = right><font size = 1 color = Gray>Plex Version: $((Invoke-RestMethod "$url`:$port/?X-Plex-Token=$Token" -Headers @{"accept"="application/json"} -UseBasicParsing).mediaContainer.version)</p></font>"
     }
 
     $startDate = Get-Date (Get-Date).AddDays(-$days) -Format 'MMM d'
@@ -595,7 +606,7 @@ Function Get-PlexRecentlyAddedMovies {
 Function Get-PlexLibraries{
     [cmdletbinding()] 
     param(    
-        [string]$localPlexAddr,
+        [string]$URI,
         
         [ValidateSet('preferences','playing','history','library','New','OnDeck','RecentAdds','Channels','Views','transcodeQueue','Queues')]
         [string]$Section  = "library",
@@ -609,6 +620,8 @@ Function Get-PlexLibraries{
 
     
     Begin {
+        $UseURL = Validate-PlexURI $URI
+
         If ($Search){
             $plexRESTAddr = "Search/$Search"
         }
@@ -629,7 +642,7 @@ Function Get-PlexLibraries{
             }
         }
         If ($CustomAddr){$plexRESTAddr = $CustomAddr}
-        [string]$command = "Invoke-RestMethod -Uri ""http://$localPlexAddr`:32400/$plexRESTAddr"" `
+        [string]$command = "Invoke-RestMethod -Uri ""$UseURL/$plexRESTAddr"" `
                             -Method GET -headers @{'X-Plex-Client-Identifier'='$($Global:PlexScriptGUID.Guid)';`
                             'X-Plex-Product'='$Global:PlexScriptFriendlyName';'X-Plex-Platform'='Windows';`
                             'X-Plex-Platform-Version'='$((Get-Host).Version.ToString())';'X-Plex-Device'='$env:COMPUTERNAME';`
@@ -639,7 +652,7 @@ Function Get-PlexLibraries{
         Try
         {
             [array]$data =  Invoke-WebRequest `
-                            -Uri "http://$localPlexAddr`:32400/$plexRESTAddr" `
+                            -Uri ($UseURL + "/$plexRESTAddr") `
                             -Method GET `
                             -Headers   @{
                                         'X-Plex-Client-Identifier'=$Global:PlexScriptGUID.Guid;
@@ -649,7 +662,7 @@ Function Get-PlexLibraries{
                                         'X-Plex-Device'=$env:COMPUTERNAME
                                         'X-Plex-Version'=$Global:PlexScriptVersion.ToString();
                                         'X-Plex-Token'=$PlexToken
-                                        }
+                                        } -UseBasicParsing
 
             
             [xml]$apiContent         = $data.Content
@@ -671,10 +684,12 @@ Function Get-PlexLibraries{
             }
             Write-Verbose "Executing: $command"
         }
-        catch
-        {
-            Write-Verbose "Error: Executing: $command"
-            break;
+        Catch [System.Net.WebException] { 
+            Write-Verbose ("Attempted to Execute: $command")
+            Write-Host "An exception was caught: $($_.Exception.Message)" -ForegroundColor Red
+            $_.Exception.Response 
+            
+            #break;
         }
 
     }
@@ -683,12 +698,97 @@ Function Get-PlexLibraries{
     }
 }
 
+
+Function Share-Library{
+    <#.EXAMPLE
+        (Invoke-RestMethod -Uri "http://plex.tv/api/servers/e721eed77500ee0b7a14f15e0b4868ca8d5731a2/shared_servers" -Method POST -headers @{'X-Plex-Token'=$PlexAuthToken;'Accept'='application/json'} -UseBasicParsing).MediaContainer.SharedServer
+
+    #>
+    [cmdletbinding()] 
+    param(
+        [Parameter(Mandatory=$true)]  
+        [string]$URI,
+        [Parameter(Mandatory=$true)]
+        [string]$Library,
+        [string]$User
+    )
+    Begin {
+        $UseURL = Validate-PlexURI $URI
+
+        #get Server ID and current shares
+        $MachineID = ( (Invoke-RestMethod -Uri "http://plex.tv/api/servers" -Method GET -headers @{'X-Plex-Token'=$PlexAuthToken;'Accept'='application/json'} -UseBasicParsing).MediaContainer.Server | Where {$_.owned -eq 1}).machineIdentifier
+        $CurrentShares = (Invoke-RestMethod -Uri "http://plex.tv/api/servers/$MachineID/shared_servers" -Method POST -headers @{'X-Plex-Token'=$PlexAuthToken;'Accept'='application/json'} -UseBasicParsing).MediaContainer.SharedServer
+
+        $CurrentShares | select id, username, userid
+
+        (Invoke-RestMethod -Uri "http://plex.tv/api/servers/$MachineID/shared_servers" -Method POST -headers @{'X-Plex-Token'=$PlexAuthToken;'Accept'='application/json'} -UseBasicParsing).MediaContainer.SharedServer | Where {$_.username -eq 'timak79'}
+        
+        #get libraries ID
+        $allLibraries = Get-PlexLibraries -URI $PlexURL -PlexToken $PlexAuthToken 
+        $FilteredLibraries = $allLibraries | Where {$_.title -ne 'Pre-roll' -and $_.type -ne 'photo'}| Select key,title,type
+        $SharedLibrariesIDList = "[" + ($FilteredLibraries.key -join ",") + "]"
+        
+        
+        #get user ID 
+        $Users = Get-PlexUsers
+        
+        $User = '6995444' 
+    }
+    Process{
+        Foreach ($User in $users){
+            
+            #add users to library
+            $Body = @{ server_id=$MachineID;
+                       shared_server=@( @{
+                        library_section_ids=$SharedLibrariesIDList;
+                        invited_id="$User"
+                    } )
+                 }
+
+            $BodyObj = ConvertTo-Json -InputObject $Body
+            $BodyArray = ConvertFrom-Json -InputObject $BodyObj
+
+            $iwrArgs = @{Headers = @{'X-Plex-Token'=$PlexAuthToken;'Accept'='application/json'}
+                            URI = "http://plex.tv/api/servers/$MachineID/shared_servers"
+                            Method = "POST"
+                    }
+
+            (Invoke-WebRequest @iwrArgs -Body $BodyObj -UseBasicParsing).RawContent | Out-Null
+        }
+
+
+    }
+    End {
+        
+    }
+}
+
+
+
+Function Get-PlexUsers {
+    (Invoke-RestMethod -Uri "http://plex.tv/api/users" -Method GET -headers @{'X-Plex-Token'=$PlexAuthToken;'Accept'='application/json'} -UseBasicParsing).MediaContainer.User
+}
+
+Function Get-PlexUser {
+    (Invoke-RestMethod -Uri "http://plex.tv/api/users" -Method GET -headers @{'X-Plex-Token'=$PlexAuthToken;'Accept'='application/json'} -UseBasicParsing).MediaContainer.User | Where{$_.Title -like 'timak79'}
+    (Invoke-RestMethod -Uri "http://plex.tv/api/users" -Method GET -headers @{'X-Plex-Token'=$PlexAuthToken;'Accept'='application/json'} -UseBasicParsing).MediaContainer.User | Where{$_.id -eq '7282248'}
+}
+
+Function Invite-PlexUser {
+    #Validate user email on plex.tv
+    (Invoke-RestMethod -Uri "http://plex.tv/api/users/validate?invited_email=$email" -Method POST -headers @{'X-Plex-Token'=$PlexAuthToken;'Accept'='application/json'} -UseBasicParsing)
+    
+    #invite user
+    (Invoke-RestMethod -Uri "http://plex.tv/api/home/users?invitedEmail=$email" -Method POST -headers @{'X-Plex-Token'=$PlexAuthToken;'Accept'='application/json'} -UseBasicParsing)
+}
+
+
 Function Get-PlexContentInLibrary{
 
     [cmdletbinding()] 
     param(
         [Parameter(Mandatory=$true)]  
-        [string]$PlexAddr,
+        [string]$URI,
         [Parameter(Mandatory=$true)]
         [string]$PlexToken,
         [string]$Search,
@@ -699,12 +799,13 @@ Function Get-PlexContentInLibrary{
 
     )
     Begin{
-        $sections = Get-PlexLibraries -localPlexAddr $PlexAddr -PlexToken $PlexToken
+        
+        $sections = Get-PlexLibraries -URI $URI -PlexToken $PlexToken
     }
     Process{
         $libraryKey = [string] ($sections | Where-Object{$_.title -like $Search -and $_.type -eq $Type} | Select -First 1).key
         If($libraryKey){
-            $LibraryContent = Get-PlexLibraries -localPlexAddr $PlexAddr -PlexToken $PlexToken -CustomAddr ('library/sections/'+ $libraryKey +'/all') -Verbose
+            $LibraryContent = Get-PlexLibraries -URI $URI -PlexToken $PlexToken -CustomAddr ('library/sections/'+ $libraryKey +'/all') -Verbose
         }
         Else{
             Write-Host ("Unable to find a library with the name of [{0}]" -f $Search) -ForegroundColor Red
@@ -721,5 +822,43 @@ Function Get-PlexContentInLibrary{
     } 
 }
 
+Function Validate-PlexURI{
+    [cmdletbinding()] 
+    param(
+        [Parameter(Mandatory=$true)] 
+        [System.Uri]$URI,
+        [System.Uri]$defaultURI = "http://localhost:32400"
+    )
 
+    Begin{
+        $OriginalURI = $URI
+        $validAddress = $null
+    }
+    Process{
+        Try{
+            If([system.uri]::IsWellFormedUriString($URI,[System.UriKind]::Absolute))
+            {
+                If($URI.Port -eq -1 -and $URI.LocalPath -match "(\d)"){
+                    [System.Uri]$newURI = 'http://' + $URI.Scheme + ':' + $URI.LocalPath
+                }
+                Else{
+                    [System.Uri]$newURI = $URI
+                }
+                
+            }
+            Else{
+                [System.Uri]$newURI = 'http://' + $URI.OriginalString
+            }
+        }
+        Catch{
+            
+        }
 
+        
+    }
+    End{
+        return $newURI.OriginalString
+    }
+}
+
+# 'iva://api.internetvideoarchive.com/2.0/DataService/VideoAssets(574105)?lang=en&bitrates=80,212,450,750,1500,8000&duration=29&adaptive=1&dts=0

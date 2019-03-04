@@ -12,18 +12,28 @@
 .PARAMETER Source
 	The source of the message being logged.
 .PARAMETER LogFile
-	Set the log and path of the log file.
+	Set the log and path of the log file. Default to global variable $LogFilePath
+.PARAMETER $MsgPrefix
+    Tacks on a message header to each log entry with a appending ::
+    Example: START :: Log start on 10/28/2018
 .PARAMETER WriteHost
 	Write the log message to the console.
     The Severity sets the color: 
+        5 is 'Gray' Letters with 'Black' background; considered low severity
+        4 is 'Cyan' Letters with 'Black' background; considered low severity
+	    3 is 'Red' Letters with 'Black' background; considered high severity
+	    2 is 'Yellow' Letters with 'Black' background; considered medium severity
+	    1 is 'White' Letters with 'Black' background; considered low severity
+        0 is 'Green' Letters with 'Black' background; considered low severity
+
 .PARAMETER ContinueOnError
 	Suppress writing log message to console on failure to write message to log file. Default is: $true.
 .PARAMETER PassThru
 	Return the message that was passed to the function
 .EXAMPLE
-	Write-Log -Message "Installing patch MS15-031" -Source 'Add-Patch' -LogType 'CMTrace'
+	 Write-Log -Message "Starting Log" -Source ${CmdletName} -Severity 1 -WriteHost
 .EXAMPLE
-	Write-Log -Message "Script is running on Windows 8" -Source 'Test-ValidOS' -LogType 'Legacy'
+	 Write-Log -Message ("Starting Log") -Source ${CmdletName} -Severity 0 -WriteHost -MsgPrefix "START"
 .NOTES
     Taken from http://psappdeploytoolkit.com
 .LINK
